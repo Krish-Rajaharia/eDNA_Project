@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.env
+*.egg-info/
+dist/
+build/
+
+# Project specific
+uploads/*
+!uploads/.gitkeep
+*.pth
+*.sqlite3
+
+# Large data files
+data/*.ndb
+data/*.nhr
+data/*.nin
+data/*.nnd
+data/*.nni
+data/*.nog
+data/*.nos
+data/*.not
+data/*.nsq
+data/*.ntf
+data/*.nto
+data/taxdb.btd
+data/taxdb.bti
+
+# Keep only FASTA files in data
+!data/*.fasta
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
