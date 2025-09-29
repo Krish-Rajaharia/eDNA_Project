@@ -262,65 +262,72 @@ class DNADataset(Dataset):
 class CNNClassifier(nn.Module):
     """CNN for DNA sequence classification"""
     
-    def __init__(self, input_dim, num_classes, config):
+    def __init__(self, input_dim, num_classes):
         super(CNNClassifier, self).__init__()
         
-        self.config = config
+        # Model hyperparameters
+        self.embedding_dim = 32
+        self.conv_filters = [64, 128, 256]
+        self.fc_sizes = [512, 128]
+        self.dropout_rate = 0.5
+        
+        # First embedding layer to convert nucleotide values to embeddings
+        self.embedding = nn.Linear(1, self.embedding_dim)
         
         # Convolutional layers
         self.conv_layers = nn.ModuleList()
-        
-        in_channels = input_dim[1] if len(input_dim) > 1 else 1
-        
-        for i, (filters, kernel_size) in enumerate(zip(config.NUM_FILTERS, config.FILTER_SIZES)):
+        in_channels = self.embedding_dim
+        for out_channels in self.conv_filters:
             self.conv_layers.append(
                 nn.Sequential(
-                    nn.Conv1d(in_channels if i == 0 else config.NUM_FILTERS[i-1], 
-                             filters, kernel_size, padding=kernel_size//2),
-                    nn.BatchNorm1d(filters),
+                    nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1),
+                    nn.BatchNorm1d(out_channels),
                     nn.ReLU(),
-                    nn.MaxPool1d(2),
-                    nn.Dropout(config.DROPOUT_RATE)
+                    nn.MaxPool1d(2)
                 )
             )
+            in_channels = out_channels
         
-        # Calculate flattened size
-        self.flatten_size = self._calculate_flatten_size(input_dim)
+        # Calculate the size after convolutions
+        conv_output_size = self.conv_filters[-1] * (input_dim // (2 ** len(self.conv_filters)))
         
         # Fully connected layers
-        self.fc_layers = nn.Sequential(
-            nn.Linear(self.flatten_size, 512),
-            nn.ReLU(),
-            nn.Dropout(config.DROPOUT_RATE),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Dropout(config.DROPOUT_RATE),
-            nn.Linear(256, num_classes)
-        )
+        fc_layers = []
+        in_features = conv_output_size
+        for out_features in self.fc_sizes:
+            fc_layers.extend([
+                nn.Linear(in_features, out_features),
+                nn.ReLU(),
+                nn.Dropout(self.dropout_rate)
+            ])
+            in_features = out_features
+        fc_layers.append(nn.Linear(in_features, num_classes))
         
-    def _calculate_flatten_size(self, input_dim):
-        """Calculate size after conv layers"""
-        # Simplified calculation - adjust based on your architecture
-        size = input_dim[0] if len(input_dim) > 0 else 150
-        for _ in self.config.NUM_FILTERS:
-            size = size // 2  # MaxPool1d(2)
-        return size * self.config.NUM_FILTERS[-1]
+        self.fc_layers = nn.Sequential(*fc_layers)
         
     def forward(self, x):
-        # Reshape for Conv1d if needed
-        if len(x.shape) == 3:  # (batch, seq_len, features)
-            x = x.transpose(1, 2)  # (batch, features, seq_len)
-        elif len(x.shape) == 2:  # (batch, seq_len)
-            x = x.unsqueeze(1)  # (batch, 1, seq_len)
+        batch_size = x.size(0)
+        
+        # Convert input shape to (batch_size, sequence_length, 1)
+        if len(x.shape) == 4:  # (batch, channel, height, width)
+            x = x.squeeze(1)  # Remove channel dimension
+        if len(x.shape) == 2:  # (batch, sequence_length)
+            x = x.unsqueeze(-1)  # Add feature dimension
             
-        # Convolutional layers
+        # Apply embedding to each nucleotide
+        x = self.embedding(x)  # (batch_size, sequence_length, embedding_dim)
+        
+        # Transpose for convolution layers (batch_size, channels, sequence_length)
+        x = x.transpose(1, 2)
+        
+        # Apply convolution layers
         for conv_layer in self.conv_layers:
             x = conv_layer(x)
             
-        # Flatten
-        x = x.view(x.size(0), -1)
+        # Flatten for fully connected layers
+        x = x.view(batch_size, -1)
         
-        # Fully connected layers
+        # Apply fully connected layers
         x = self.fc_layers(x)
         
         return x
